@@ -2,9 +2,12 @@ package org.apache.hadoop.yarn.server.federation.policies.router;
 
 import org.apache.hadoop.yarn.api.records.ApplicationSubmissionContext;
 import org.apache.hadoop.yarn.exceptions.YarnException;
+import org.apache.hadoop.yarn.server.federation.policies.FederationPolicyInitializationContext;
+import org.apache.hadoop.yarn.server.federation.policies.FederationPolicyInitializationContextValidator;
 import org.apache.hadoop.yarn.server.federation.policies.FederationPolicyUtils;
 import org.apache.hadoop.yarn.server.federation.policies.RouterPolicyFacade;
 import org.apache.hadoop.yarn.server.federation.policies.exceptions.FederationPolicyException;
+import org.apache.hadoop.yarn.server.federation.policies.exceptions.FederationPolicyInitializationException;
 import org.apache.hadoop.yarn.server.federation.store.records.SubClusterId;
 import org.apache.hadoop.yarn.server.federation.store.records.SubClusterIdInfo;
 import org.apache.hadoop.yarn.server.federation.store.records.SubClusterInfo;
@@ -23,6 +26,17 @@ public class IntelligentAlgorithmPolicy extends AbstractRouterPolicy {
     private static final Logger LOG =
             LoggerFactory.getLogger(RouterPolicyFacade.class);
 
+    @Override
+    public void reinitialize(
+            FederationPolicyInitializationContext federationPolicyContext)
+            throws FederationPolicyInitializationException {
+        FederationPolicyInitializationContextValidator
+                .validate(federationPolicyContext, this.getClass().getCanonicalName());
+
+        // note: this overrides BaseRouterPolicy and ignores the weights
+        setPolicyContext(federationPolicyContext);
+    }
+
     //mapreduce.job.tags=taskid,cluster_id,wait_time,priority
     @Override
     public SubClusterId getHomeSubcluster(
@@ -39,14 +53,20 @@ public class IntelligentAlgorithmPolicy extends AbstractRouterPolicy {
 
         // Get cluster id
         Set<String> tagsSet = appSubmissionContext.getApplicationTags();
+
+        for (String tag : tagsSet) {
+            LOG.info("tag: " + tag);
+        }
+
         SubClusterIdInfo chosen = null;
         for (String tag : tagsSet) {
             if (!(null == tag || tag.isEmpty())) {
                 //TODO: ###匹配
                 if (tag.contains("#")) {
-                    String[] tags = tag.split("#");
-                    if (tag.length() == 4 && !tags[1].isEmpty()) {
-                        chosen = new SubClusterIdInfo(tags[1]);
+                    String[] tagsArr = tag.split("#");
+                    if (tagsArr.length == 4 && !tagsArr[1].isEmpty()) {
+                        chosen = new SubClusterIdInfo(tagsArr[1]);
+                        LOG.info("chosen: " + chosen.toId().toString());
                         break;
                     }
                 }
@@ -55,7 +75,7 @@ public class IntelligentAlgorithmPolicy extends AbstractRouterPolicy {
 
         // Check whether the selected cluster is active
         if (null != chosen && activeSubclusters.keySet().contains(chosen.toId())) {
-            LOG.info("AlgorithmPolicy, subClusterId: " + chosen.toId().toString());
+            LOG.info("AlgorithmPolicy, subClusterId: " + chosen.toId().getId());
             return chosen.toId();
         }
 
